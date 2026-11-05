@@ -9,7 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+try:  # Home Assistant >= 2026.11
+    from pytest_homeassistant.common import async_fire_time_changed
+except ImportError:  # older Home Assistant
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.airsend import DOMAIN
 from custom_components.airsend.device import Device, TransferResult, to_bool

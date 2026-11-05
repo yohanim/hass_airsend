@@ -4,14 +4,16 @@ import re
 
 import pytest
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import (
-    AiohttpClientMockResponse,
-)
+try:  # Home Assistant >= 2026.11: official test package
+    from pytest_homeassistant.common import MockConfigEntry
+    from pytest_homeassistant.test_util.aiohttp import AiohttpClientMockResponse
+except ImportError:  # older Home Assistant: community package
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from pytest_homeassistant_custom_component.test_util.aiohttp import (
+        AiohttpClientMockResponse,
+    )
 
 from custom_components.airsend import DOMAIN
-
-pytest_plugins = "pytest_homeassistant_custom_component"
 
 ADDON_URL = "http://addon.test:33863/"
 SPURL = "sp://token@[fe80::0211:22ff:fe33:4455]?gw=0&rhost=192.168.1.50"

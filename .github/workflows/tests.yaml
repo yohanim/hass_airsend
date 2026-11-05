@@ -13,7 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         # Must work both before and after Home Assistant 2026.11
-        homeassistant: ["2026.10.4", "2026.11.0"]
+        include:
+          - homeassistant: "2026.10.4"
+            requirements: requirements_test.txt
+          - homeassistant: "2026.11.0"
+            requirements: requirements_test_ha2026.11.txt
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -23,11 +27,10 @@ jobs:
         run: |
           echo "homeassistant==${{ matrix.homeassistant }}" > /tmp/override.txt
           uv venv
-          uv pip install -r requirements_test.txt --override /tmp/override.txt
+          uv pip install -r ${{ matrix.requirements }} --override /tmp/override.txt
           uv run --no-project python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
       - name: Run tests
-        # The launcher applies test-harness shims for the HA version under test
-        run: uv run --no-project python scripts/run_tests.py -v
+        run: uv run --no-project pytest -v
 
   hassfest:
     runs-on: ubuntu-latest

@@ -1,4 +1,4 @@
-# Test dependencies. The plugin pins the matching homeassistant version.
-# CI also runs against a newer Home Assistant with an override, see
-# .github/workflows/tests.yaml.
+# Test dependencies for Home Assistant < 2026.11.
+# The plugin pins the matching homeassistant version. For 2026.11 and later,
+# see requirements_test_ha2026.11.txt.
 pytest-homeassistant-custom-component==0.13.375

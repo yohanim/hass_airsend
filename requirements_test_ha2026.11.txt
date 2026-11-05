@@ -1,0 +1,6 @@
+# Test dependencies for Home Assistant >= 2026.11.
+# Home Assistant now ships its own test package (pytest-homeassistant),
+# released together with Home Assistant; pytest-homeassistant-custom-component
+# is broken from 2026.11 on. Only 2026.11.0b6 is published so far: switch to
+# 2026.11.0 as soon as it is available. CI overrides homeassistant itself.
+pytest-homeassistant==2026.11.0b6
