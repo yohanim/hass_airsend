@@ -148,26 +148,28 @@ class Device:
         return self._name
 
     @property
-    def device_info(self) -> dict:
-        """Return device info for Home Assistant device registry."""
+    def device_info(self):
+        """Return device info for Home Assistant device registry.
+
+        Built with keyword arguments, which works both with the TypedDict
+        DeviceInfo (HA < 2026.11) and the dataclass DeviceInfo (HA >= 2026.11,
+        where plain mappings are going to be deprecated). Unset fields are
+        left out rather than passed as None.
+        """
         from homeassistant.helpers import device_registry as dr
 
-        connections = set()
-        if self._mac:
-            connections.add((dr.CONNECTION_NETWORK_MAC, self._mac))
-
-        info = {
+        fields = {
             "identifiers": {(DOMAIN, self.unique_channel_name)},
             "name": self._name,
             "manufacturer": "AirSend",
             "model": RTYPE_LABELS.get(self._rtype, "AirSend"),
+            "configuration_url": "https://app.airsend.cloud/",
         }
-        if connections:
-            info["connections"] = connections
-        info["configuration_url"] = "https://app.airsend.cloud/"
+        if self._mac:
+            fields["connections"] = {(dr.CONNECTION_NETWORK_MAC, self._mac)}
         if self._local_ip:
-            info["hw_version"] = f"IP: {self._local_ip}"
-        return info
+            fields["hw_version"] = f"IP: {self._local_ip}"
+        return dr.DeviceInfo(**fields)
 
     @property
     def extra_state_attributes(self):
