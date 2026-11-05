@@ -40,7 +40,6 @@ async def async_setup_entry(
         # AirSend box sensors (type 0)
         if device.is_airsend:
             if to_bool(options.get("sensors"), False):
-                coordinator.set_has_sensors(True)
                 entities.append(AirSendTempSensor(coordinator))
                 entities.append(AirSendIllSensor(coordinator))
 

@@ -49,11 +49,12 @@ class AirSendStateSensor(CoordinatorEntity, BinarySensorEntity):
         return BinarySensorDeviceClass.RUNNING
 
     @property
-    def available(self) -> bool:
-        return self.coordinator.data.get("available", True)
-
-    @property
     def is_on(self) -> bool | None:
+        """On when the box answered the last state query (through the addon).
+
+        The entity itself stays available so that an unreachable box shows
+        as "not running" instead of "unavailable".
+        """
         return self.coordinator.data.get("available", True)
 
     @property

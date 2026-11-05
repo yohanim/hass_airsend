@@ -24,7 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AirSend from a config entry."""
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from .coordinator import AirSendCoordinator
-    from .device import Device
+    from .device import Device, to_bool
 
     hass.data.setdefault(DOMAIN, {})
     session = async_get_clientsession(hass)
@@ -51,6 +51,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for name, options in devices_config.items():
         device = Device(name, options, internal_url, session)
         coordinator = AirSendCoordinator(hass, device)
+        if device.is_airsend and to_bool(options.get("sensors"), False):
+            coordinator.set_has_sensors(True)
         coordinators[name] = coordinator
 
     hass.data[DOMAIN][entry.entry_id] = {
@@ -62,6 +64,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, AS_PLATFORMS)
+
+    # First poll of the AirSend boxes in the background, so state and sensor
+    # values do not wait a full refresh interval and startup is not delayed.
+    for name, coordinator in coordinators.items():
+        if coordinator.device.is_airsend:
+            entry.async_create_background_task(
+                hass,
+                coordinator.async_refresh(),
+                f"{DOMAIN}_first_refresh_{name}",
+            )
     return True
 
 

@@ -279,6 +279,72 @@ class Device:
             _LOGGER.debug("Bind error '%s': %s", self._name, err)
             return False
 
+    async def async_query(self, note, entity_id: str) -> dict | None:
+        """Send a synchronous local query and return the JSON response.
+
+        Sensor queries (TEMPERATURE, ILLUMINANCE...) only return their value
+        when the transfer waits for the answer, whatever the device ``wait``
+        option is. Raises one of NETWORK_ERRORS if the addon is unreachable,
+        returns None if it answered without a usable value.
+        """
+        if not (self._serviceurl and self._spurl):
+            return None
+        uid = hashlib.sha256(entity_id.encode("utf-8")).hexdigest()[:12]
+        payload = json.dumps({
+            "wait": True,
+            "channel": self._channel,
+            "thingnotes": {"uid": "0x" + uid, "notes": [note]},
+        })
+        headers = {
+            "Authorization": "Bearer " + self._spurl,
+            "content-type": "application/json",
+            "User-Agent": "hass_airsend",
+        }
+        async with self._client() as session:
+            async with session.post(
+                self._serviceurl + "airsend/transfer",
+                headers=headers,
+                data=payload,
+                timeout=aiohttp.ClientTimeout(total=6),
+            ) as response:
+                if response.status != 200:
+                    _LOGGER.debug(
+                        "Query '%s' %s: status %s",
+                        self._name, note.get("type"), response.status,
+                    )
+                    return None
+                try:
+                    data = await response.json(content_type=None)
+                except ValueError:
+                    return None
+        try:
+            if isinstance(data, dict) and int(data.get("type", 0x100)) < 0x100:
+                return data
+        except (TypeError, ValueError):
+            pass
+        return None
+
+    @staticmethod
+    def extract_note_value(response, expected_type: int) -> float | None:
+        """Extract a numeric note value of the given type from a response."""
+        if not isinstance(response, dict):
+            return None
+        thingnotes = response.get("thingnotes")
+        if not isinstance(thingnotes, dict):
+            return None
+        notes = thingnotes.get("notes")
+        if not isinstance(notes, list):
+            return None
+        for note in notes:
+            if not isinstance(note, dict) or "value" not in note:
+                continue
+            try:
+                if int(note.get("type")) == expected_type:
+                    return float(note["value"])
+            except (TypeError, ValueError):
+                continue
+        return None
+
     async def async_transfer(self, note, entity_id=None) -> "TransferResult":
         """Send a command (async)."""
         status_code = 404
