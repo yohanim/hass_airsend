@@ -1,11 +1,12 @@
 """AirSend buttons."""
 from typing import Any
 
-from .device import Device
+from .device import Device, TransferResult
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import CONF_INTERNAL_URL
@@ -20,9 +21,10 @@ async def async_setup_entry(
 ) -> None:
     internal_url = entry.data.get(CONF_INTERNAL_URL, "")
     devices_config = entry.data.get("devices", {})
+    session = async_get_clientsession(hass)
     entities = []
     for name, options in devices_config.items():
-        device = Device(name, options, internal_url)
+        device = Device(name, options, internal_url, session)
         if device.is_button:
             entities.append(AirSendButton(hass, device))
     async_add_entities(entities)
@@ -67,7 +69,7 @@ class AirSendButton(ButtonEntity):
     async def async_press(self, **kwargs: Any) -> None:
         note = {"method": 1, "type": 0, "value": "TOGGLE"}
         result = await self._device.async_transfer(note, self.entity_id)
-        available = result is not False
+        available = result != TransferResult.NETWORK_ERROR
         if self._available != available:
             self._available = available
             self.async_write_ha_state()

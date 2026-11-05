@@ -6,6 +6,7 @@ from .device import Device, TransferResult
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -21,9 +22,10 @@ async def async_setup_entry(
 ) -> None:
     internal_url = entry.data.get(CONF_INTERNAL_URL, "")
     devices_config = entry.data.get("devices", {})
+    session = async_get_clientsession(hass)
     entities = []
     for name, options in devices_config.items():
-        device = Device(name, options, internal_url)
+        device = Device(name, options, internal_url, session)
         if device.is_switch:
             entities.append(AirSendSwitch(hass, device))
     async_add_entities(entities)

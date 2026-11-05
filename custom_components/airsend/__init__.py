@@ -22,10 +22,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AirSend from a config entry."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from .coordinator import AirSendCoordinator
     from .device import Device
 
     hass.data.setdefault(DOMAIN, {})
+    session = async_get_clientsession(hass)
 
     detected_url = await get_internal_url(hass)
 
@@ -47,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinators = {}
     for name, options in devices_config.items():
-        device = Device(name, options, internal_url)
+        device = Device(name, options, internal_url, session)
         coordinator = AirSendCoordinator(hass, device)
         coordinators[name] = coordinator
 

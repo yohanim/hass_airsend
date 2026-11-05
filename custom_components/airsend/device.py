@@ -1,4 +1,5 @@
 """AirSend device."""
+import contextlib
 import logging
 import json
 import hashlib
@@ -21,6 +22,27 @@ RTYPE_LABELS = {
 
 from enum import Enum
 
+# Errors meaning "the remote end could not be reached". aiohttp raises
+# TimeoutError (not a ClientError) when ClientTimeout expires.
+NETWORK_ERRORS = (aiohttp.ClientError, TimeoutError)
+
+
+def to_bool(value, default: bool = False) -> bool:
+    """Convert a YAML option (bool, int or string) to a boolean, safely."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on", "y"):
+        return True
+    if text in ("0", "false", "no", "off", "n", ""):
+        return False
+    _LOGGER.warning("Invalid boolean value %r, using %s", value, default)
+    return default
+
 
 class TransferResult(Enum):
     """Result of an async_transfer call."""
@@ -38,10 +60,17 @@ class Device:
         name: str,
         options,
         serviceurl: str,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
-        """Initialize a device."""
+        """Initialize a device.
+
+        ``session`` should be Home Assistant's shared client session
+        (``async_get_clientsession(hass)``); without it a temporary session
+        is created for each request.
+        """
         self._name = name
         self._serviceurl = serviceurl
+        self._session = session
         self._uid = None
         self._rtype = None
         self._apikey = None
@@ -69,10 +98,7 @@ class Device:
             self._spurl = options["spurl"]
         except KeyError:
             pass
-        try:
-            self._wait = eval(str(options["wait"]))
-        except KeyError:
-            pass
+        self._wait = to_bool(options.get("wait"), False)
         try:
             self._channel = options["channel"]
         except KeyError:
@@ -89,10 +115,7 @@ class Device:
             self._refresh = int(options["refresh"])
         except KeyError:
             pass
-        try:
-            self._invert = bool(options["invert"])
-        except KeyError:
-            self._invert = False
+        self._invert = to_bool(options.get("invert"), False)
 
         # MAC and local IP — only for AirSend Box (type 0)
         # MAC derived from EUI-64 link-local IPv6 in spurl: sp://TOKEN@[fe80::xxxx]?gw=0&rhost=192.168.x.x
@@ -220,6 +243,15 @@ class Device:
             return self._refresh
         return 5 * 60
 
+    @contextlib.asynccontextmanager
+    async def _client(self):
+        """Yield the shared HA session, or a temporary one if none was given."""
+        if self._session is not None and not self._session.closed:
+            yield self._session
+        else:
+            async with aiohttp.ClientSession() as session:
+                yield session
+
     async def async_bind(self) -> bool:
         """Bind a channel to listen (async)."""
         if not (self._serviceurl and self._spurl and isinstance(self._bind, int) and self._bind > 0):
@@ -235,7 +267,7 @@ class Device:
             "User-Agent": "hass_airsend",
         }
         try:
-            async with aiohttp.ClientSession() as session:
+            async with self._client() as session:
                 async with session.post(
                     self._serviceurl + "airsend/bind",
                     headers=headers,
@@ -243,7 +275,7 @@ class Device:
                     timeout=aiohttp.ClientTimeout(total=6),
                 ) as response:
                     return response.status == 200
-        except aiohttp.ClientError as err:
+        except NETWORK_ERRORS as err:
             _LOGGER.debug("Bind error '%s': %s", self._name, err)
             return False
 
@@ -251,7 +283,8 @@ class Device:
         """Send a command (async)."""
         status_code = 404
         ret = False
-        wait = 'false, "callback":"http://127.0.0.1/"'
+        is_command = isinstance(note, dict) and note.get("method") == 1
+        wait ='false, "callback":"http://127.0.0.1/"'
         if self._wait:
             wait = 'true'
 
@@ -280,7 +313,7 @@ class Device:
                 "User-Agent": "hass_airsend",
             }
             try:
-                async with aiohttp.ClientSession() as session:
+                async with self._client() as session:
                     async with session.post(
                         self._serviceurl + "airsend/transfer",
                         headers=headers,
@@ -299,12 +332,17 @@ class Device:
                         else:
                             ret = None
                             status_code = response.status
-            except aiohttp.ClientError as err:
-                _LOGGER.debug("Transfer local error '%s': %s", self._name, err)
-                return TransferResult.NETWORK_ERROR
+            except NETWORK_ERRORS as err:
+                _LOGGER.debug(
+                    "Transfer local error '%s': %s", self._name, repr(err)
+                )
+                if not (self._apikey and is_command):
+                    return TransferResult.NETWORK_ERROR
 
-        # Fallback to cloud API if local failed
-        if status_code != 200 and self._apikey:
+        # Fallback to cloud API if local failed (or is unreachable).
+        # Only for real commands: the cloud API has no equivalent for QUERY
+        # notes and would turn them into a TOGGLE (value 6).
+        if status_code != 200 and self._apikey and is_command:
             action = "command"
             value = 6
             if all(k in note for k in ("method", "type", "value")):
@@ -326,7 +364,7 @@ class Device:
                 "User-Agent": "hass_airsend",
             }
             try:
-                async with aiohttp.ClientSession() as session:
+                async with self._client() as session:
                     async with session.get(
                         cloud_url,
                         headers=headers,
@@ -334,8 +372,11 @@ class Device:
                     ) as response:
                         status_code = response.status
                         ret = True
-            except aiohttp.ClientError as err:
-                _LOGGER.warning("Transfer cloud error '%s': %s — both local and cloud failed", self._name, err)
+            except NETWORK_ERRORS as err:
+                _LOGGER.warning(
+                    "Transfer cloud error '%s': %s — both local and cloud failed",
+                    self._name, repr(err),
+                )
                 return TransferResult.NETWORK_ERROR
 
         if status_code == 200:

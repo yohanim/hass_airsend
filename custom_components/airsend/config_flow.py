@@ -6,26 +6,27 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_INTERNAL_URL
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import DOMAIN, load_airsend_yaml, get_internal_url
 
 _LOGGER = logging.getLogger(DOMAIN)
 
 
-async def test_connection(url: str) -> str | None:
+async def test_connection(hass, url: str) -> str | None:
     """Test connection to AirSend addon. Returns None if OK, error key otherwise."""
     if not url:
         return "no_url"
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as response:
-                # L'addon répond même avec 401/404, l'important est qu'il réponde
-                if response.status < 500:
-                    return None
-                return "cannot_connect"
+        session = async_get_clientsession(hass)
+        async with session.get(
+            url,
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as response:
+            # L'addon répond même avec 401/404, l'important est qu'il réponde
+            if response.status < 500:
+                return None
+            return "cannot_connect"
     except aiohttp.ClientConnectorError:
         return "cannot_connect"
     except TimeoutError:
@@ -51,7 +52,7 @@ class AirSendConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 internal_url += "/"
 
             # Test de connexion
-            connection_error = await test_connection(internal_url)
+            connection_error = await test_connection(self.hass, internal_url)
             if connection_error:
                 errors["base"] = connection_error
             else:
@@ -102,7 +103,7 @@ class AirSendConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 internal_url += "/"
 
             # Test de connexion
-            connection_error = await test_connection(internal_url)
+            connection_error = await test_connection(self.hass, internal_url)
             if connection_error:
                 errors["base"] = connection_error
             else:

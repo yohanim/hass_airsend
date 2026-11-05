@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import CONF_INTERNAL_URL, UnitOfTemperature, LIGHT_LUX
 
 from .coordinator import AirSendCoordinator
-from .device import Device
+from .device import Device, to_bool
 from . import DOMAIN
 
 _LOGGER = logging.getLogger(DOMAIN)
@@ -39,12 +39,7 @@ async def async_setup_entry(
 
         # AirSend box sensors (type 0)
         if device.is_airsend:
-            sensors = False
-            try:
-                sensors = eval(str(options.get("sensors", False)))
-            except Exception:
-                pass
-            if sensors:
+            if to_bool(options.get("sensors"), False):
                 coordinator.set_has_sensors(True)
                 entities.append(AirSendTempSensor(coordinator))
                 entities.append(AirSendIllSensor(coordinator))
@@ -57,6 +52,7 @@ class AirSendAnySensor(RestoreEntity, SensorEntity):
 
     def __init__(self, hass: HomeAssistant, device: Device, internal_url: str) -> None:
         self._device = device
+        self._state = None
         self._unique_id = DOMAIN + "_" + str(device.unique_channel_name) + "_sensor"
         self.entity_id = generate_entity_id("sensor.{}", device.unique_channel_name, hass=hass)
 
