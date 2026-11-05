@@ -1,7 +1,7 @@
 """AirSend covers."""
 from typing import Any
 
-from .device import Device, TransferResult
+from .device import Device, TransferResult, build_devices
 
 from homeassistant.components.cover import CoverEntity
 from homeassistant.config_entries import ConfigEntry
@@ -25,8 +25,7 @@ async def async_setup_entry(
     devices_config = entry.data.get("devices", {})
     session = async_get_clientsession(hass)
     entities = []
-    for name, options in devices_config.items():
-        device = Device(name, options, internal_url, session)
+    for device in build_devices(devices_config, internal_url, session):
         if device.is_cover:
             entities.append(AirSendCover(hass, device))
     async_add_entities(entities)
@@ -38,7 +37,7 @@ class AirSendCover(RestoreEntity, CoverEntity):
     def __init__(self, hass: HomeAssistant, device: Device) -> None:
         self._hass = hass
         self._device = device
-        self._unique_id = DOMAIN + "_" + str(device.unique_channel_name) + "_cover"
+        self._unique_id = DOMAIN + "_" + str(device.unique_entity_name) + "_cover"
         self._closed = None
         self._available = True
         if device.is_cover_with_position:

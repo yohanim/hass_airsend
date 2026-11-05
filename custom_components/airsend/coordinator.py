@@ -22,7 +22,7 @@ class AirSendCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{device.unique_channel_name}",
+            name=f"{DOMAIN}_{device.unique_entity_name}",
             update_interval=timedelta(seconds=device.refresh_value),
         )
         self._device = device
@@ -48,7 +48,7 @@ class AirSendCoordinator(DataUpdateCoordinator):
         # Query state: tells whether the box (through the addon) is reachable
         result = await self._device.async_transfer(
             {"method": "QUERY", "type": "STATE"},
-            f"coordinator_{self._device.unique_channel_name}",
+            f"coordinator_{self._device.unique_entity_name}",
         )
         data["available"] = result != TransferResult.NETWORK_ERROR
         if not data["available"]:
@@ -64,7 +64,7 @@ class AirSendCoordinator(DataUpdateCoordinator):
 
     async def _async_update_sensors(self, data: dict) -> None:
         """Query temperature and illuminance (synchronous transfers)."""
-        uid = self._device.unique_channel_name
+        uid = self._device.unique_entity_name
         try:
             response = await self._device.async_query(
                 {"method": "QUERY", "type": "TEMPERATURE"},
