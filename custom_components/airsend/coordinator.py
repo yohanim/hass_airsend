@@ -2,7 +2,7 @@
 import logging
 from datetime import timedelta
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .device import Device, TransferResult, NETWORK_ERRORS
@@ -14,9 +14,18 @@ _LOGGER = logging.getLogger(DOMAIN)
 NOTE_TYPE_TEMPERATURE = 2   # Kelvin
 NOTE_TYPE_ILLUMINANCE = 3   # lux
 
+# Devices that only push state (covers) are probed for reachability:
+# retry quickly while the bridge looks down so entities recover on their own.
+_AVAILABILITY_RETRY_SECONDS = 30
+_AVAILABILITY_FAILURE_THRESHOLD = 2
+
 
 class AirSendCoordinator(DataUpdateCoordinator):
-    """Coordinator for a single AirSend device — polls state, temp and illuminance."""
+    """Coordinator for a single AirSend device.
+
+    - AirSend box (type 0): polls state, temperature and illuminance.
+    - Covers: probe reachability so they recover from transient failures.
+    """
 
     def __init__(self, hass: HomeAssistant, device: Device) -> None:
         super().__init__(
@@ -27,6 +36,7 @@ class AirSendCoordinator(DataUpdateCoordinator):
         )
         self._device = device
         self._sensors_enabled = False
+        self._availability_failures = 0
         # Data structure shared across all entities of this device
         self.data = {
             "state": None,
@@ -42,9 +52,14 @@ class AirSendCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict:
         """Fetch data from device — called automatically by the coordinator."""
         data = dict(self.data)  # keep last known values
-        if not self._device.is_airsend:
-            return data
+        if self._device.is_airsend:
+            await self._async_update_box(data)
+        elif self._device.is_cover:
+            await self._async_probe_cover(data)
+        return data
 
+    async def _async_update_box(self, data: dict) -> None:
+        """Poll an AirSend box: reachability, bind, then sensors."""
         # Query state: tells whether the box (through the addon) is reachable
         result = await self._device.async_transfer(
             {"method": "QUERY", "type": "STATE"},
@@ -53,14 +68,12 @@ class AirSendCoordinator(DataUpdateCoordinator):
         data["available"] = result != TransferResult.NETWORK_ERROR
         if not data["available"]:
             _LOGGER.debug("AirSend box '%s' is unreachable", self._device.name)
-            return data
+            return
 
         await self._device.async_bind()
 
         if self._sensors_enabled:
             await self._async_update_sensors(data)
-
-        return data
 
     async def _async_update_sensors(self, data: dict) -> None:
         """Query temperature and illuminance (synchronous transfers)."""
@@ -86,10 +99,32 @@ class AirSendCoordinator(DataUpdateCoordinator):
                 "Sensor query failed for %s: %s", self._device.name, repr(err)
             )
 
+    async def _async_probe_cover(self, data: dict) -> None:
+        """Probe reachability so covers (push only) recover on their own."""
+        if await self._device.async_probe():
+            data["available"] = True
+            self._availability_failures = 0
+            self.update_interval = timedelta(seconds=self._device.refresh_value)
+        else:
+            self._availability_failures += 1
+            if self._availability_failures >= _AVAILABILITY_FAILURE_THRESHOLD:
+                data["available"] = False
+            self.update_interval = timedelta(seconds=_AVAILABILITY_RETRY_SECONDS)
+
+    @callback
+    def async_set_available(self, available: bool) -> None:
+        """Update availability reported by entities after a transfer."""
+        if available:
+            self._availability_failures = 0
+        if self.data.get("available", True) == available:
+            return
+        self.data["available"] = available
+        self.async_update_listeners()
+
     @property
     def _has_sensors(self) -> bool:
         return self._sensors_enabled
 
     def set_has_sensors(self, value: bool) -> None:
-        """Called by the sensor platform when the box sensors are enabled."""
+        """Called at setup when the box sensors are enabled."""
         self._sensors_enabled = bool(value)

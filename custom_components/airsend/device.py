@@ -386,6 +386,31 @@ class Device:
                 continue
         return None
 
+    async def async_probe(self) -> bool:
+        """Check a command path is reachable (sends no command, no RF)."""
+        if self._serviceurl and await self._probe_url(self._serviceurl):
+            return True
+        if self._apikey:
+            # async_transfer falls back to the cloud API: probe it the same way
+            return await self._probe_url("https://airsend.cloud/")
+        if not self._serviceurl:
+            # Nothing configured to probe: don't report unavailable
+            return True
+        return False
+
+    async def _probe_url(self, url: str) -> bool:
+        try:
+            async with self._client() as session:
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=6),
+                ) as response:
+                    # Any answer means the path is reachable
+                    return response.status < 500
+        except NETWORK_ERRORS as err:
+            _LOGGER.debug("Probe error '%s': %s", self._name, repr(err))
+            return False
+
     async def async_transfer(self, note, entity_id=None) -> "TransferResult":
         """Send a command (async)."""
         status_code = 404
