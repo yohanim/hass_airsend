@@ -26,7 +26,10 @@ jobs:
           uv pip install -r requirements_test.txt --override /tmp/override.txt
           uv run --no-project python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
       - name: Run tests
-        run: uv run --no-project pytest -v
+        # Import homeassistant before pytest loads its plugins: since 2026.11
+        # it aliases httpx to httpx2 at import time, which fails if a plugin
+        # imported httpx first.
+        run: uv run --no-project python -c "import homeassistant, sys, pytest; sys.exit(pytest.main(['-v']))"
 
   hassfest:
     runs-on: ubuntu-latest
@@ -40,4 +43,5 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          ignore: brands
+          # Forks have issues and topics disabled: only check them upstream.
+          ignore: ${{ github.repository_owner == 'devmel' && 'brands' || 'brands issues topics' }}

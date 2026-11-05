@@ -53,10 +53,18 @@ async def test_setup_and_unload(hass: HomeAssistant, addon) -> None:
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
+def _device(hass: HomeAssistant, entry, identifier: str):
+    """Find a device of the entry by identifier (works on all HA versions)."""
+    for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id):
+        if (DOMAIN, identifier) in device.identifiers:
+            return device
+    return None
+
+
 async def test_device_registry(hass: HomeAssistant, addon) -> None:
     """Devices are registered with model, MAC and IP (DeviceInfo kwargs)."""
-    await _setup(hass)
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "1")})
+    entry = await _setup(hass)
+    device = _device(hass, entry, "1")
     assert device is not None
     assert device.name == "AirSend box"
     assert device.manufacturer == "AirSend"
@@ -64,7 +72,7 @@ async def test_device_registry(hass: HomeAssistant, addon) -> None:
     assert device.hw_version == "IP: 192.168.1.50"
     assert (dr.CONNECTION_NETWORK_MAC, "00:11:22:33:44:55") in device.connections
 
-    cover = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "12345")})
+    cover = _device(hass, entry, "12345")
     assert cover is not None
     assert cover.model == "AirSend Cover"
     assert cover.connections == set()
