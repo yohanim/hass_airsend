@@ -26,10 +26,8 @@ jobs:
           uv pip install -r requirements_test.txt --override /tmp/override.txt
           uv run --no-project python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
       - name: Run tests
-        # Import homeassistant before pytest loads its plugins: since 2026.11
-        # it aliases httpx to httpx2 at import time, which fails if a plugin
-        # imported httpx first.
-        run: uv run --no-project python -c "import homeassistant, sys, pytest; sys.exit(pytest.main(['-v']))"
+        # The launcher applies test-harness shims for the HA version under test
+        run: uv run --no-project python scripts/run_tests.py -v
 
   hassfest:
     runs-on: ubuntu-latest
