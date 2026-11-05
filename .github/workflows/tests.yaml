@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: pytest (HA ${{ matrix.homeassistant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Must work both before and after Home Assistant 2026.11
+        homeassistant: ["2026.10.4", "2026.11.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - name: Install dependencies
+        run: |
+          echo "homeassistant==${{ matrix.homeassistant }}" > /tmp/override.txt
+          uv venv
+          uv pip install -r requirements_test.txt --override /tmp/override.txt
+          uv run --no-project python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
+      - name: Run tests
+        run: uv run --no-project pytest -v
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands

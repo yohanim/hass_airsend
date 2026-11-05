@@ -1,0 +1,4 @@
+# Test dependencies. The plugin pins the matching homeassistant version.
+# CI also runs against a newer Home Assistant with an override, see
+# .github/workflows/tests.yaml.
+pytest-homeassistant-custom-component==0.13.375
