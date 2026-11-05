@@ -7,8 +7,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.const import CONF_INTERNAL_URL
 
-from homeassistant.components.hassio import get_addons_info
-
 DOMAIN = "airsend"
 AS_PLATFORMS = ["cover", "switch", "button", "light", "sensor", "binary_sensor"]
 
@@ -115,9 +113,21 @@ def load_airsend_yaml(hass: HomeAssistant) -> dict:
 
 
 async def get_internal_url(hass: HomeAssistant) -> str:
-    """Auto-detect internal URL of the AirSend addon."""
+    """Auto-detect internal URL of the AirSend addon (Supervisor only).
+
+    The hassio component (and its aiohasupervisor library) is only imported
+    when running under the Supervisor, so installations without it (Home
+    Assistant Container / Core, addon run as a standalone Docker container)
+    never fail on that import; the URL entered in the config flow is used.
+    """
     try:
-        addons_info = get_addons_info(hass)
+        from homeassistant.helpers.hassio import is_hassio
+
+        if not is_hassio(hass):
+            return ""
+        from homeassistant.components.hassio import get_addons_info
+
+        addons_info = get_addons_info(hass) or {}
         for name, options in addons_info.items():
             if "_airsend" in name:
                 ip = options.get("ip_address")
