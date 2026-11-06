@@ -234,6 +234,23 @@ def test_device_options() -> None:
     assert device.is_async is False
 
 
+async def test_cloud_fallback_is_logged(hass: HomeAssistant, aioclient_mock, caplog) -> None:
+    """A local non-200 answer that silently went to the cloud is now logged."""
+    import logging
+
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    aioclient_mock.post(ADDON_URL + "airsend/transfer", status=262)
+    aioclient_mock.get("https://airsend.cloud/device/12345/command/5/", status=200)
+    device = Device("Volet salon", DEVICES["Volet salon"], ADDON_URL, async_get_clientsession(hass))
+    with caplog.at_level(logging.DEBUG, logger="airsend"):
+        result = await device.async_transfer({"method": 1, "type": 0, "value": "UP"}, "cover.volet_salon")
+    assert result is TransferResult.SUCCESS
+    assert "local addon answered 262, falling back to the AirSend cloud API" in caplog.text
+    assert "local HTTP 262 in" in caplog.text
+    assert "cloud HTTP 200 in" in caplog.text
+
+
 async def test_transfer_unreachable_returns_network_error(hass: HomeAssistant, aioclient_mock) -> None:
     """TimeoutError is reported as NETWORK_ERROR instead of raising."""
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
