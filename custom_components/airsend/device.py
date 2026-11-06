@@ -1,6 +1,7 @@
 """AirSend device."""
 import contextlib
 import logging
+import time
 import json
 import hashlib
 import re
@@ -281,6 +282,7 @@ class Device:
 
     async def async_transfer(self, note, entity_id=None) -> "TransferResult":
         """Send a command (async)."""
+        started = time.monotonic()
         status_code = 404
         ret = False
         is_command = isinstance(note, dict) and note.get("method") == 1
@@ -332,9 +334,15 @@ class Device:
                         else:
                             ret = None
                             status_code = response.status
+                _LOGGER.debug(
+                    "Transfer '%s' %s: local HTTP %s in %.0f ms (wait=%s)",
+                    self._name, note.get("value", note.get("type")),
+                    status_code, (time.monotonic() - started) * 1000, self._wait,
+                )
             except NETWORK_ERRORS as err:
                 _LOGGER.debug(
-                    "Transfer local error '%s': %s", self._name, repr(err)
+                    "Transfer local error '%s' after %.0f ms: %s",
+                    self._name, (time.monotonic() - started) * 1000, repr(err),
                 )
                 if not (self._apikey and is_command):
                     return TransferResult.NETWORK_ERROR
@@ -343,6 +351,14 @@ class Device:
         # Only for real commands: the cloud API has no equivalent for QUERY
         # notes and would turn them into a TOGGLE (value 6).
         if status_code != 200 and self._apikey and is_command:
+            # Visible without debug logging: going through the cloud adds a
+            # round trip over the internet to every command.
+            _LOGGER.info(
+                "Transfer '%s': local addon answered %s, falling back to the "
+                "AirSend cloud API",
+                self._name, status_code if self._serviceurl else "(not configured)",
+            )
+            cloud_started = time.monotonic()
             action = "command"
             value = 6
             if all(k in note for k in ("method", "type", "value")):
@@ -372,6 +388,12 @@ class Device:
                     ) as response:
                         status_code = response.status
                         ret = True
+                _LOGGER.debug(
+                    "Transfer '%s': cloud HTTP %s in %.0f ms (total %.0f ms)",
+                    self._name, status_code,
+                    (time.monotonic() - cloud_started) * 1000,
+                    (time.monotonic() - started) * 1000,
+                )
             except NETWORK_ERRORS as err:
                 _LOGGER.warning(
                     "Transfer cloud error '%s': %s — both local and cloud failed",
